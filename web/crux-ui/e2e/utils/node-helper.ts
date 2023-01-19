@@ -37,6 +37,7 @@ export const deployWithDagent = async (
   productId: string,
   versionId?: string,
   ignoreResult?: boolean,
+  needScreenshot?: string,
 ) => {
   if (versionId) {
     await page.goto(versionUrl(productId, versionId))
@@ -61,16 +62,24 @@ export const deployWithDagent = async (
   })
 
   navigation = page.waitForNavigation({ url: `**${productUrl(productId)}/versions/**/deployments/**/deploy` })
+
+  // TEMP <
+  page.on("console", it => console.log(it))
+  // > TEMP
+
   await deploy.click()
   await navigation
 
   if (!ignoreResult) {
-    await page.waitForTimeout(1000)
-    await page.screenshot({ path: screenshotPath('should-successful-after-1k'), fullPage: true })
 
-
-    await page.waitForTimeout(10000)
-    await page.screenshot({ path: screenshotPath('should-successful-after-10k'), fullPage: true })
+    // TEMP <
+    if (needScreenshot) {
+      await page.waitForTimeout(1000)
+      await page.screenshot({ path: screenshotPath('should-successful-after-1s-' + needScreenshot), fullPage: true })
+      await page.waitForTimeout(10000)
+      await page.screenshot({ path: screenshotPath('should-successful-after-10s-' + needScreenshot), fullPage:true })
+    }
+    // > TEMP
 
     await page.getByText('Successful').waitFor()
   }

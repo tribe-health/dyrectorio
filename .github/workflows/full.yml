@@ -222,7 +222,6 @@ jobs:
           name: cli
           path: ${{ env.GOLANG_WORKING_DIRECTORY }}/cli.zstd
 
-
 # crux scope
   crux_lint:
     runs-on: ubuntu-22.04
