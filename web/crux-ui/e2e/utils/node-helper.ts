@@ -65,6 +65,13 @@ export const deployWithDagent = async (
   await navigation
 
   if (!ignoreResult) {
+    await page.waitForTimeout(1000)
+    await page.screenshot({ path: screenshotPath('should-successful-after-1k'), fullPage: true })
+
+
+    await page.waitForTimeout(10000)
+    await page.screenshot({ path: screenshotPath('should-successful-after-10k'), fullPage: true })
+
     await page.getByText('Successful').waitFor()
   }
 }

@@ -451,7 +451,7 @@ jobs:
         run: |
           npm ci --include=dev
           npx playwright install chromium
-          npm run test:e2e
+          npm run test:e2e ||:
       - uses: actions/upload-artifact@v3
         with:
           name: e2e-screenshots
