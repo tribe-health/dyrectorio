@@ -3,13 +3,13 @@ package k8s
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/rs/zerolog/log"
 
 	v1 "github.com/dyrector-io/dyrectorio/golang/api/v1"
 	"github.com/dyrector-io/dyrectorio/golang/internal/dogger"
 	"github.com/dyrector-io/dyrectorio/golang/internal/grpc"
+	"github.com/dyrector-io/dyrectorio/golang/internal/mapper"
 	"github.com/dyrector-io/dyrectorio/golang/internal/util"
 	builder "github.com/dyrector-io/dyrectorio/golang/pkg/builder/container"
 	"github.com/dyrector-io/dyrectorio/golang/pkg/crane/config"
@@ -100,7 +100,7 @@ func (d *DeployFacade) PreDeploy() error {
 			if err := d.configmap.deployConfigMapData(
 				d.namespace.name,
 				d.params.InstanceConfig.ContainerPreName+"-shared",
-				strArrToStrMap(d.params.InstanceConfig.SharedEnvironment),
+				mapper.PipeSeparatedToStringMap(&d.params.InstanceConfig.SharedEnvironment),
 			); err != nil {
 				log.Error().Err(err).Stack().Msg("Namespace global config map error")
 				return err
@@ -112,7 +112,7 @@ func (d *DeployFacade) PreDeploy() error {
 		if err := d.configmap.deployConfigMapData(
 			d.namespace.name,
 			d.params.InstanceConfig.Name+"-common",
-			strArrToStrMap(d.params.InstanceConfig.Environment),
+			mapper.PipeSeparatedToStringMap(&d.params.InstanceConfig.Environment),
 		); err != nil {
 			log.Error().Err(err).Stack().Msg("Common config map error")
 			return err
@@ -123,7 +123,7 @@ func (d *DeployFacade) PreDeploy() error {
 		if err := d.configmap.deployConfigMapData(
 			d.namespace.name,
 			d.params.ContainerConfig.Container,
-			strArrToStrMap(d.params.ContainerConfig.Environment),
+			mapper.PipeSeparatedToStringMap(&d.params.ContainerConfig.Environment),
 		); err != nil {
 			log.Error().Err(err).Stack().Msg("Container config map error")
 			return err
@@ -216,17 +216,18 @@ func (d *DeployFacade) Deploy() error {
 	if d.params.ContainerConfig.Expose {
 		if err := d.ingress.deployIngress(
 			&DeployIngressOptions{
-				namespace:     d.namespace.name,
-				containerName: d.params.ContainerConfig.Container,
-				ingressName:   d.params.ContainerConfig.IngressName,
-				ingressHost:   d.params.ContainerConfig.IngressHost,
-				uploadLimit:   d.params.ContainerConfig.IngressUploadLimit,
-				ports:         d.service.portsBound,
-				tls:           d.params.ContainerConfig.ExposeTLS,
-				proxyHeaders:  d.params.ContainerConfig.ProxyHeaders,
-				customHeaders: d.params.ContainerConfig.CustomHeaders,
-				annotations:   d.params.ContainerConfig.Annotations.Ingress,
-				labels:        d.params.ContainerConfig.Labels.Ingress,
+				namespace:      d.namespace.name,
+				containerName:  d.params.ContainerConfig.Container,
+				ingressName:    d.params.ContainerConfig.IngressName,
+				ingressHost:    d.params.ContainerConfig.IngressHost,
+				uploadLimit:    d.params.ContainerConfig.IngressUploadLimit,
+				ports:          d.service.portsBound,
+				tls:            d.params.ContainerConfig.ExposeTLS,
+				proxyHeaders:   d.params.ContainerConfig.ProxyHeaders,
+				allowedHeaders: d.params.ContainerConfig.CustomHeaders,
+				annotations:    d.params.ContainerConfig.Annotations.Ingress,
+				labels:         d.params.ContainerConfig.Labels.Ingress,
+				traefik:        d.appConfig.TraefikEnabled,
 			},
 		); err != nil {
 			log.Error().Err(err).Stack().Msg("Error with ingress")
@@ -255,17 +256,6 @@ func (d *DeployFacade) PostDeploy() error {
 
 func (d *DeployFacade) Clear() error {
 	return nil
-}
-
-func strArrToStrMap(str []string) map[string]string {
-	mapped := map[string]string{}
-	for _, e := range str {
-		if strings.ContainsRune(e, '|') {
-			eSplit := strings.Split(e, "|")
-			mapped[eSplit[0]] = eSplit[1]
-		}
-	}
-	return mapped
 }
 
 func Deploy(c context.Context, dog *dogger.DeploymentLogger, deployImageRequest *v1.DeployImageRequest,

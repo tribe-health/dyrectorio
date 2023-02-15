@@ -19,6 +19,8 @@ import (
 	networking "k8s.io/client-go/kubernetes/typed/networking/v1"
 )
 
+const clusterIssuerDefault = "letsencrypt-prod"
+
 // facade object for ingress management
 type ingress struct {
 	ctx       context.Context
@@ -31,9 +33,10 @@ type DeployIngressOptions struct {
 	namespace, containerName, ingressName, ingressHost, uploadLimit string
 	ports                                                           []int32
 	tls, proxyHeaders                                               bool
-	customHeaders                                                   []string
+	allowedHeaders                                                  []string
 	labels                                                          map[string]string
 	annotations                                                     map[string]string
+	traefik                                                         bool
 }
 
 func newIngress(ctx context.Context, client *Client) *ingress {
@@ -90,11 +93,7 @@ func (ing *ingress) deployIngress(options *DeployIngressOptions) error {
 		spec.WithTLS(tlsConf)
 	}
 
-	annot := getIngressAnnotations(options.tls,
-		options.proxyHeaders,
-		options.uploadLimit,
-		options.customHeaders,
-	)
+	annot := getIngressAnnotations(options)
 	maps.Copy(annot, options.annotations)
 
 	labels := map[string]string{}
@@ -137,28 +136,46 @@ func getTLSConfig(ingressPath, containerName string, enabled bool) *netv1.Ingres
 	return nil
 }
 
-func getIngressAnnotations(tlsIsWanted, proxyHeaders bool,
-	uploadLimit string, customHeaders []string,
-) map[string]string {
-	corsHeaders := []string{}
-
-	annotations := map[string]string{
-		"kubernetes.io/ingress.class": "nginx",
+func getIngressAnnotations(opts *DeployIngressOptions) map[string]string {
+	if opts.traefik {
+		return getTraefikHeadersAnnotations(opts)
 	}
+	return getNginxHeadersAnnotations(opts)
+}
 
-	if tlsIsWanted {
+func getTraefikHeadersAnnotations(opts *DeployIngressOptions) map[string]string {
+	// in default cases traefik uses this as ingress class, however this could be modified
+	const traefikClass = "traefik"
+	annotations := map[string]string{}
+	annotations["kubernetes.io/ingress.class"] = traefikClass
+	if opts.tls {
+		annotations["traefik.ingress.kubernetes.io/router.entrypoints"] = "web,websecure"
+		annotations["acme.cert-manager.io/http01-ingress-class"] = traefikClass
+		annotations["traefik.ingress.kubernetes.io/router.tls"] = fmt.Sprint(true)
 		annotations["kubernetes.io/tls-acme"] = fmt.Sprintf("%v", true)
-		annotations["cert-manager.io/cluster-issuer"] = "letsencrypt-prod"
+		annotations["cert-manager.io/cluster-issuer"] = clusterIssuerDefault
+	} else {
+		annotations["traefik.ingress.kubernetes.io/router.entrypoints"] = "web"
 	}
+	return annotations
+}
 
+func getNginxHeadersAnnotations(opts *DeployIngressOptions) map[string]string {
+	annotations := map[string]string{}
+	headers := []string{}
+	if opts.tls {
+		annotations["kubernetes.io/tls-acme"] = fmt.Sprintf("%v", true)
+		annotations["cert-manager.io/cluster-issuer"] = clusterIssuerDefault
+	}
+	annotations["kubernetes.io/ingress.class"] = "nginx"
 	// Add Custom Headers to the CORS Allow Header annotation if presents
-	if len(customHeaders) > 0 {
-		corsHeaders = customHeaders
+	if len(opts.allowedHeaders) > 0 {
+		headers = opts.allowedHeaders
 	}
 
-	if proxyHeaders {
+	if opts.proxyHeaders {
 		extraHeaders := []string{"X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Server", "X-Real-IP", "X-Requested-With"}
-		corsHeaders = append(corsHeaders, extraHeaders...)
+		headers = append(headers, extraHeaders...)
 
 		annotations["nginx.ingress.kubernetes.io/enable-cors"] = "true"
 		annotations["nginx.ingress.kubernetes.io/proxy-buffering"] = "on"
@@ -166,14 +183,13 @@ func getIngressAnnotations(tlsIsWanted, proxyHeaders bool,
 	}
 
 	// Add header string to cors-allow-headers if presents any value
-	if len(corsHeaders) > 0 {
-		annotations["nginx.ingress.kubernetes.io/cors-allow-headers"] = strings.Join(corsHeaders, ", ")
+	if len(headers) > 0 {
+		annotations["nginx.ingress.kubernetes.io/cors-allow-headers"] = strings.Join(headers, ", ")
 	}
 
-	if uploadLimit != "" {
-		annotations["nginx.ingress.kubernetes.io/proxy-body-size"] = uploadLimit
+	if opts.uploadLimit != "" {
+		annotations["nginx.ingress.kubernetes.io/proxy-body-size"] = opts.uploadLimit
 	}
-
 	return annotations
 }
 
